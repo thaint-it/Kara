@@ -1,0 +1,59 @@
+name: kara
+description: "Karaoke Hàng Chờ – chủ phòng một điện thoại, khách chọn bài bằng QR, phát ra Smart TV hoặc ra chính điện thoại."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.5.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Web server nhúng phục vụ trang khách + API + WebSocket
+  shelf: ^1.4.1
+  shelf_router: ^1.1.4
+  shelf_web_socket: ^3.0.0
+  web_socket_channel: ^3.0.3
+
+  # Tìm kiếm YouTube không cần API key.
+  # Ghim đúng 3.0.0 — đây là bản đã kiểm chứng, và là bản duy nhất chạy được
+  # trên cả Flutter 3.24.3 (flutter_test ghim `path 1.9.0`, còn
+  # youtube_explode_dart 3.0.1+ đòi `path ^1.9.1`) lẫn Flutter mới nhất.
+  # Khi YouTube đổi giao diện web làm thư viện hỏng thì nâng dòng này lên, và
+  # kiểm tra lại `youtube_service.dart` vì API tìm kiếm có thể đã đổi.
+  youtube_explode_dart: 3.0.0
+  http: ^1.6.0
+
+  # Phát trên điện thoại (YouTube IFrame Player API trong WebView).
+  # Hai gói nền tảng được khai báo thẳng vì cần cấu hình riêng cho từng bên:
+  # Android tắt "phải bấm mới phát", iOS bật phát ngay trong trang.
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.3.2
+  webview_flutter_wkwebview: ^3.22.0
+  wakelock_plus: ^1.4.0
+
+  # Lưu trữ, QR, mạng
+  shared_preferences: ^2.5.3
+  path_provider: ^2.1.5
+  qr_flutter: ^4.1.0
+  network_info_plus: ^7.0.0
+  uuid: ^4.6.0
+
+  # Giữ tiến trình sống khi chủ phòng khoá màn hình. Chỉ dùng trên Android;
+  # iOS không cho chạy server ở nền (xem ghi chú trong Cài đặt của app).
+  flutter_foreground_task: ^9.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    # Trang web cho khách + trang trình phát nhúng, phục vụ bởi server nội bộ
+    - assets/web/

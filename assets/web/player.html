@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Kara – Trình phát</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  #player { width: 100%; height: 100%; border: 0; }
+  /* Chặn mọi cú chạm vào iframe để người xem không bấm được link YouTube,
+     bật video gợi ý hay mở app YouTube. Điều khiển nằm ở phía Flutter. */
+  #shield { position: fixed; inset: 0; background: transparent; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<div id="shield"></div>
+
+<script>
+/*
+ * Trang này do web server nhúng của app phục vụ tại /player, nên nó có một
+ * origin http:// thật – điều kiện bắt buộc của YouTube IFrame Player API.
+ * Flutter gọi vào các hàm của `window.kara`, còn trang này báo ngược lại qua
+ * kênh JavaScript `Kara`.
+ */
+(function () {
+  var player = null;
+  var ready = false;
+  var pendingVideoId = null;
+  var pendingVolume = null;
+  var currentVideoId = null;
+
+  function post(msg) {
+    try {
+      if (window.Kara && window.Kara.postMessage) {
+        window.Kara.postMessage(JSON.stringify(msg));
+      }
+    } catch (e) { /* không có kênh thì bỏ qua */ }
+  }
+
+  function sendState() {
+    if (!player || !player.getPlayerState) return;
+    var state = player.getPlayerState();
+    var position = 0, duration = 0;
+    try { position = player.getCurrentTime() || 0; } catch (e) {}
+    try { duration = player.getDuration() || 0; } catch (e) {}
+    post({
+      type: 'state',
+      state: state,
+      position: position,
+      duration: duration,
+      videoId: currentVideoId
+    });
+  }
+
+  window.kara = {
+    load: function (videoId) {
+      currentVideoId = videoId;
+      if (!ready) { pendingVideoId = videoId; return; }
+      player.loadVideoById({ videoId: videoId, startSeconds: 0 });
+      player.playVideo();
+    },
+    play: function () { if (ready) player.playVideo(); },
+    pause: function () { if (ready) player.pauseVideo(); },
+    stop: function () {
+      currentVideoId = null;
+      if (ready) player.stopVideo();
+    },
+    seek: function (seconds) { if (ready) player.seekTo(seconds, true); },
+    setVolume: function (v) {
+      if (!ready) { pendingVolume = v; return; }
+      player.unMute();
+      player.setVolume(v);
+    }
+  };
+
+  window.onYouTubeIframeAPIReady = function () {
+    player = new YT.Player('player', {
+      height: '100%',
+      width: '100%',
+      playerVars: {
+        autoplay: 1,
+        controls: 0,
+        disablekb: 1,
+        fs: 0,
+        // Không gợi ý video liên quan khi hết bài – hàng chờ do app quyết định.
+        rel: 0,
+        iv_load_policy: 3,
+        modestbranding: 1,
+        playsinline: 1,
+        origin: location.origin
+      },
+      events: {
+        onReady: function () {
+          ready = true;
+          if (pendingVolume !== null) {
+            player.unMute();
+            player.setVolume(pendingVolume);
+            pendingVolume = null;
+          }
+          post({ type: 'ready' });
+          if (pendingVideoId) {
+            window.kara.load(pendingVideoId);
+            pendingVideoId = null;
+          }
+          setInterval(function () {
+            if (player.getPlayerState && player.getPlayerState() === 1) sendState();
+          }, 1000);
+        },
+        onStateChange: sendState,
+        onError: function (e) {
+          // 101 và 150: chủ sở hữu không cho phát ngoài YouTube.
+          post({ type: 'error', code: e.data, videoId: currentVideoId });
+        }
+      }
+    });
+  };
+
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d12">
+<title>Karaoke – Chọn bài</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Hỏi tên lần đầu, sau đó lưu trong trình duyệt -->
+<div id="gate" class="gate" hidden>
+  <div class="gate-card">
+    <h1>Bạn tên gì?</h1>
+    <p class="muted">Tên này hiện cho chủ phòng biết ai chọn bài.</p>
+    <input id="gate-name" type="text" placeholder="Ví dụ: Anh Tuấn" maxlength="24"
+           autocomplete="name" enterkeyhint="go">
+    <button id="gate-go" class="btn btn-primary btn-block">Vào phòng</button>
+    <p id="gate-error" class="error" hidden></p>
+  </div>
+</div>
+
+<!-- Chủ phòng đã kết thúc buổi hát và sinh mã phòng mới -->
+<div id="expired" class="gate" hidden>
+  <div class="gate-card">
+    <h1>Buổi hát đã kết thúc</h1>
+    <p class="muted">
+      Chủ phòng đã đóng buổi hát này. Quét lại mã QR trên điện thoại chủ phòng
+      để vào buổi mới.
+    </p>
+    <button id="expired-retry" class="btn btn-primary btn-block">Thử lại</button>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="topbar-row">
+    <div class="now" id="now">
+      <span class="now-label">Đang hát</span>
+      <span class="now-title" id="now-title">Chưa có bài nào</span>
+    </div>
+    <div class="conn" id="conn" title="Trạng thái kết nối"></div>
+  </div>
+  <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+  <div class="upnext" id="upnext" hidden></div>
+</header>
+
+<main>
+  <!-- ------------------------------------------------- Tab: Tìm bài -->
+  <section class="tab" id="tab-search">
+    <div class="searchbar">
+      <input id="q" type="search" placeholder="Tên bài, ca sĩ, hoặc dán link YouTube"
+             autocomplete="off" enterkeyhint="search">
+      <button id="q-clear" class="icon-btn" aria-label="Xoá" hidden>✕</button>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="prefer-karaoke" checked>
+      <span>Ưu tiên bản karaoke</span>
+    </label>
+    <ul class="suggests" id="suggests" hidden></ul>
+    <div id="search-status" class="status" hidden></div>
+    <div id="results" class="results"></div>
+    <div id="results-more" class="status" hidden>Đang tải thêm…</div>
+  </section>
+
+  <!-- --------------------------------------------- Tab: Bài của tôi -->
+  <section class="tab" id="tab-mine" hidden>
+    <div id="mine" class="results"></div>
+    <div id="mine-empty" class="status">Bạn chưa yêu cầu bài nào.</div>
+  </section>
+
+  <!-- ------------------------------------------------ Tab: Hàng chờ -->
+  <section class="tab" id="tab-queue" hidden>
+    <div id="queue" class="results"></div>
+    <div id="queue-empty" class="status">Hàng chờ đang trống.</div>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <button class="tabbtn active" data-tab="search"><span>🔍</span>Tìm bài</button>
+  <button class="tabbtn" data-tab="mine"><span>🎤</span>Bài của tôi<i id="mine-badge" class="badge" hidden></i></button>
+  <button class="tabbtn" data-tab="queue"><span>📋</span>Hàng chờ<i id="queue-badge" class="badge" hidden></i></button>
+</nav>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- Xem trước 15 giây, phát ngay trên máy của khách, không ảnh hưởng bài đang hát -->
+<div id="preview" class="preview" hidden>
+  <div class="preview-box">
+    <div class="preview-head">
+      <span id="preview-title" class="preview-title"></span>
+      <button id="preview-close" class="icon-btn" aria-label="Đóng">✕</button>
+    </div>
+    <div id="preview-frame"></div>
+    <p class="muted small">Nghe thử 15 giây trên điện thoại của bạn.</p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
