@@ -55,6 +55,12 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Kara mở một web server trong mạng WiFi của bạn để khách quét mã QR và chọn bài, và để điều khiển app YouTube trên TV.</string>
 
+	<!-- Tìm bài bằng giọng nói -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Kara dùng micro để bạn nói tên bài hát cần tìm.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Kara chuyển giọng nói thành chữ để tìm bài hát.</string>
+
 	<!-- Phát nhạc khi màn hình tắt (iOS chỉ chạy nền được hạn chế, xem README) -->
 	<key>UIBackgroundModes</key>
 	<array>

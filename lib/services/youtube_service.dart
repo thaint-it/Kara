@@ -65,9 +65,11 @@ class YoutubeService {
     final cached = _suggestCache[q];
     if (cached != null && !cached.isExpired(_suggestTtl)) return cached.value;
 
+    // `oe=utf-8`: thiếu nó Google trả ISO-8859-1 và tiếng Việt có dấu giải mã
+    // UTF-8 sẽ lỗi.
     final uri = Uri.parse(
       'https://suggestqueries.google.com/complete/search'
-      '?client=youtube&ds=yt&hl=vi&q=${Uri.encodeQueryComponent(q)}',
+      '?client=youtube&ds=yt&hl=vi&oe=utf-8&q=${Uri.encodeQueryComponent(q)}',
     );
 
     try {
@@ -166,6 +168,233 @@ class YoutubeService {
     }
   }
 
+  // ------------------------------------------------------------- đề xuất
+
+  /// API nội bộ mà trang xem video của YouTube dùng để lấy cột "Tiếp theo".
+  /// `getRelatedVideos` của youtube_explode 3.0.0 không đọc được định dạng
+  /// `lockupViewModel` mới nên phải tự gọi.
+  static const _nextUrl =
+      'https://www.youtube.com/youtubei/v1/next?prettyPrint=false';
+  static const _webClientVersion = '2.20250101.00.00';
+  static const _relatedTtl = Duration(minutes: 30);
+
+  /// Đề xuất dài hơn mốc này là tuyển tập / mix hàng giờ, không hát được.
+  static const _maxRecommendSec = 12 * 60;
+
+  /// Phòng chưa hát bài nào, hoặc YouTube đổi API đề xuất: dùng tìm kiếm.
+  static const fallbackRecommendQuery = 'karaoke nhạc trẻ hay nhất';
+
+  static final _karaokeTitle = RegExp(
+    r'karaoke|kara\b|beat|tone (nam|nữ)|instrumental',
+    caseSensitive: false,
+  );
+
+  final _relatedCache = <String, _Cached<List<Song>>>{};
+
+  /// Video YouTube đề xuất bên cạnh [videoId].
+  Future<List<Song>> related(String videoId) async {
+    final cached = _relatedCache[videoId];
+    if (cached != null && !cached.isExpired(_relatedTtl)) return cached.value;
+
+    try {
+      final res = await _http
+          .post(
+            Uri.parse(_nextUrl),
+            headers: {'content-type': 'application/json'},
+            body: jsonEncode({
+              'context': {
+                'client': {
+                  'clientName': 'WEB',
+                  'clientVersion': _webClientVersion,
+                  'hl': 'vi',
+                  'gl': 'VN',
+                },
+              },
+              'videoId': videoId,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return const [];
+      final songs = parseNextResponse(jsonDecode(utf8.decode(res.bodyBytes)));
+      _relatedCache[videoId] = _Cached(songs);
+      return songs;
+    } catch (e) {
+      debugPrint('Lấy đề xuất cho $videoId thất bại: $e');
+      return const [];
+    }
+  }
+
+  /// Gộp đề xuất của các bài [seeds] (xen kẽ để bài nào cũng góp phần), bỏ
+  /// video quá dài và những bài trong [exclude]. Thiếu thì bù bằng tìm kiếm.
+  Future<List<Song>> recommend(
+    List<String> seeds, {
+    required bool preferKaraoke,
+    Set<String> exclude = const {},
+    int limit = 30,
+  }) async {
+    final lists = await Future.wait(seeds.map(related));
+    final seen = {...seeds, ...exclude};
+    final merged = <Song>[];
+    for (var i = 0;; i++) {
+      var any = false;
+      for (final list in lists) {
+        if (i >= list.length) continue;
+        any = true;
+        final s = list[i];
+        if (s.durationSec >= _minDurationSec &&
+            s.durationSec <= _maxRecommendSec &&
+            seen.add(s.videoId)) {
+          merged.add(s);
+        }
+      }
+      if (!any) break;
+    }
+
+    var result = merged;
+    if (preferKaraoke) {
+      final karaoke = merged.where((s) => _karaokeTitle.hasMatch(s.title));
+      if (karaoke.length >= 6) result = karaoke.toList();
+    }
+    if (result.length >= 6) return result.take(limit).toList();
+
+    try {
+      final more = await search(
+        fallbackRecommendQuery,
+        preferKaraoke: preferKaraoke,
+      );
+      return [...result, ...more.where((s) => seen.add(s.videoId))]
+          .take(limit)
+          .toList();
+    } catch (_) {
+      return result;
+    }
+  }
+
+  /// Bóc danh sách video từ phản hồi của `youtubei/v1/next`.
+  @visibleForTesting
+  static List<Song> parseNextResponse(Object? json) {
+    final lockups = <Map<String, dynamic>>[];
+    void walk(Object? node) {
+      if (node is List) {
+        for (final e in node) {
+          walk(e);
+        }
+      } else if (node is Map<String, dynamic>) {
+        final lockup = node['lockupViewModel'];
+        if (lockup is Map<String, dynamic>) {
+          lockups.add(lockup);
+          return;
+        }
+        for (final v in node.values) {
+          walk(v);
+        }
+      }
+    }
+
+    walk(json);
+
+    final songs = <Song>[];
+    for (final l in lockups) {
+      if (l['contentType'] != 'LOCKUP_CONTENT_TYPE_VIDEO') continue;
+      final id = l['contentId'];
+      if (id is! String || id.isEmpty) continue;
+
+      final meta = _path(l, ['metadata', 'lockupMetadataViewModel']);
+      final title = _path(meta, ['title', 'content']);
+      if (title is! String) continue;
+
+      final rows = _path(meta, [
+        'metadata',
+        'contentMetadataViewModel',
+        'metadataRows',
+      ]);
+      final parts = <Map<String, dynamic>>[
+        if (rows is List)
+          for (final r in rows)
+            if (r is Map && r['metadataParts'] is List)
+              for (final p in r['metadataParts'] as List)
+                if (p is Map<String, dynamic>) p,
+      ];
+      String? text(Map<String, dynamic> p) => _path(p, ['text', 'content']) as String?;
+      String? label(Map<String, dynamic> p) =>
+          (p['accessibilityLabel'] as String?) ?? text(p);
+
+      final channel = parts.isEmpty ? '' : text(parts.first) ?? '';
+      String? views;
+      String? published;
+      for (final p in parts.skip(1)) {
+        final what = label(p) ?? '';
+        if (what.contains('lượt xem') || what.contains('views')) {
+          views ??= text(p);
+        } else if (what.contains('trước') || what.contains('ago')) {
+          published ??= text(p);
+        }
+      }
+
+      String? badge;
+      void findBadge(Object? node) {
+        if (badge != null) return;
+        if (node is List) {
+          node.forEach(findBadge);
+        } else if (node is Map) {
+          final b = node['thumbnailBadgeViewModel'];
+          if (b is Map && b['text'] is String) {
+            badge = b['text'] as String;
+            return;
+          }
+          node.values.forEach(findBadge);
+        }
+      }
+
+      findBadge(l['contentImage']);
+
+      songs.add(Song(
+        videoId: id,
+        title: title,
+        channel: channel,
+        durationSec: parseDurationText(badge),
+        thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+        viewCount: parseCompactCount(views),
+        publishedText: published,
+      ));
+    }
+    return songs;
+  }
+
+  /// "24 N" → 24000, "2,2 Tr" → 2200000, "1,1 T" → 1100000000.
+  @visibleForTesting
+  static int? parseCompactCount(String? text) {
+    if (text == null) return null;
+    final m = RegExp(r'([\d.,]+)\s*(N|Tr|T|K|M|B)?', caseSensitive: false)
+        .firstMatch(text.trim());
+    if (m == null) return null;
+    final unit = (m.group(2) ?? '').toLowerCase();
+    // Có đơn vị thì dấu phẩy là phần thập phân; không có thì là dấu nghìn.
+    final digits = unit.isEmpty
+        ? m.group(1)!.replaceAll(RegExp(r'[.,]'), '')
+        : m.group(1)!.replaceAll('.', '').replaceAll(',', '.');
+    final n = double.tryParse(digits);
+    if (n == null) return null;
+    const scale = {
+      'n': 1e3,
+      'k': 1e3,
+      'tr': 1e6,
+      'm': 1e6,
+      't': 1e9,
+      'b': 1e9,
+    };
+    return (n * (scale[unit] ?? 1)).round();
+  }
+
+  static Object? _path(Object? node, List<String> keys) {
+    var cur = node;
+    for (final k in keys) {
+      if (cur is! Map) return null;
+      cur = cur[k];
+    }
+    return cur;
+  }
+
   void dispose() {
     _yt.close();
     _http.close();
@@ -182,6 +411,42 @@ class YoutubeService {
       seconds = seconds * 60 + p!;
     }
     return seconds;
+  }
+
+  static final _agoPattern = RegExp(
+    r'(\d+)\s*(years?|y|months?|mo|weeks?|w|days?|d|hours?|h|minutes?|min|m|seconds?|s)\s+ago',
+    caseSensitive: false,
+  );
+
+  static const _agoUnits = {
+    'y': 'năm',
+    'mo': 'tháng',
+    'w': 'tuần',
+    'd': 'ngày',
+    'h': 'giờ',
+    'm': 'phút',
+    's': 'giây',
+  };
+
+  /// Đổi "9y ago" / "3 months ago" mà thư viện trả về thành "9 năm trước" /
+  /// "3 tháng trước" như YouTube tiếng Việt. Không nhận ra thì giữ nguyên.
+  @visibleForTesting
+  static String? localizeUploadDate(String? text) {
+    if (text == null || text.trim().isEmpty) return null;
+    final match = _agoPattern.firstMatch(text);
+    if (match == null) return text;
+    final unit = match.group(2)!.toLowerCase();
+    final key = unit.startsWith('mo')
+        ? 'mo'
+        : unit.startsWith('mi')
+            ? 'm'
+            : unit[0];
+    final vi = _agoUnits[key];
+    if (vi == null) return text;
+    final prefix = text.toLowerCase().startsWith('streamed')
+        ? 'Đã phát trực tiếp '
+        : '';
+    return '$prefix${match.group(1)} $vi trước';
   }
 
   /// Giữ lại video hát được: bỏ livestream, Shorts, mục không phải video.
@@ -250,7 +515,7 @@ class _SearchSession {
           durationSec: durationSec,
           thumbUrl: _bestThumb(result),
           viewCount: result.viewCount,
-          publishedText: result.uploadDate,
+          publishedText: YoutubeService.localizeUploadDate(result.uploadDate),
         ));
       }
 

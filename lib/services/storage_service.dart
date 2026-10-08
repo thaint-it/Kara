@@ -19,6 +19,7 @@ class StorageService {
   static const _kTvAuth = 'tv_auth';
   static const _kSettings = 'room_settings';
   static const _kRoomCode = 'room_code';
+  static const _kSearchHistory = 'search_history';
 
   final SharedPreferences _prefs;
   final File _roomFile;
@@ -63,6 +64,14 @@ class StorageService {
   Future<void> saveTvAuth(TvAuth? auth) => auth == null
       ? _prefs.remove(_kTvAuth)
       : _prefs.setString(_kTvAuth, jsonEncode(auth.toJson()));
+
+  // ----------------------------------------------------- lịch sử tìm kiếm
+
+  List<String> loadSearchHistory() =>
+      _prefs.getStringList(_kSearchHistory) ?? const [];
+
+  Future<void> saveSearchHistory(List<String> items) =>
+      _prefs.setStringList(_kSearchHistory, items);
 
   // ------------------------------------------------------------- mã phòng
 

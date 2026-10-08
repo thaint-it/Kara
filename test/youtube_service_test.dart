@@ -69,6 +69,140 @@ void main() {
     });
   });
 
+  group('parseNextResponse – bài đề xuất từ youtubei/v1/next', () {
+    Map<String, dynamic> lockup({
+      required String id,
+      required String title,
+      String type = 'LOCKUP_CONTENT_TYPE_VIDEO',
+      String? duration = '4:11',
+    }) =>
+        {
+          'lockupViewModel': {
+            'contentId': id,
+            'contentType': type,
+            'contentImage': {
+              'thumbnailViewModel': {
+                'overlays': [
+                  {
+                    'thumbnailBottomOverlayViewModel': {
+                      'badges': [
+                        if (duration != null)
+                          {
+                            'thumbnailBadgeViewModel': {'text': duration},
+                          },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+            'metadata': {
+              'lockupMetadataViewModel': {
+                'title': {'content': title},
+                'metadata': {
+                  'contentMetadataViewModel': {
+                    'metadataRows': [
+                      {
+                        'metadataParts': [
+                          {
+                            'text': {'content': 'Thiện Trung Guitar'},
+                          },
+                        ],
+                      },
+                      {
+                        'metadataParts': [
+                          {
+                            'text': {'content': '2,2 Tr'},
+                            'accessibilityLabel': '2,2 triệu lượt xem',
+                          },
+                          {
+                            'text': {'content': '1 năm trước'},
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        };
+
+    test('đọc tên bài, kênh, lượt xem, ngày đăng, thời lượng', () {
+      final json = {
+        'contents': {
+          'results': [
+            lockup(id: 'abc123', title: 'Karaoke Trời giấu trời mang đi'),
+          ],
+        },
+      };
+      final songs = YoutubeService.parseNextResponse(json);
+      expect(songs, hasLength(1));
+      final s = songs.single;
+      expect(s.videoId, 'abc123');
+      expect(s.title, 'Karaoke Trời giấu trời mang đi');
+      expect(s.channel, 'Thiện Trung Guitar');
+      expect(s.viewCount, 2200000);
+      expect(s.publishedText, '1 năm trước');
+      expect(s.durationSec, 251);
+    });
+
+    test('bỏ danh sách phát / mix, chỉ giữ video', () {
+      final json = [
+        lockup(id: 'v1', title: 'Bài 1'),
+        lockup(id: 'p1', title: 'Mix', type: 'LOCKUP_CONTENT_TYPE_PLAYLIST'),
+      ];
+      expect(
+        YoutubeService.parseNextResponse(json).map((s) => s.videoId),
+        ['v1'],
+      );
+    });
+
+    test('phản hồi lạ thì trả về rỗng, không ném lỗi', () {
+      expect(YoutubeService.parseNextResponse(null), isEmpty);
+      expect(YoutubeService.parseNextResponse({'error': 1}), isEmpty);
+    });
+  });
+
+  group('parseCompactCount – lượt xem rút gọn', () {
+    test('N / Tr / T kiểu YouTube tiếng Việt', () {
+      expect(YoutubeService.parseCompactCount('24 N'), 24000);
+      expect(YoutubeService.parseCompactCount('2,2 Tr'), 2200000);
+      expect(YoutubeService.parseCompactCount('1,1 T'), 1100000000);
+    });
+
+    test('số đầy đủ có dấu chấm nghìn', () {
+      expect(YoutubeService.parseCompactCount('950'), 950);
+      expect(YoutubeService.parseCompactCount('12.345'), 12345);
+      expect(YoutubeService.parseCompactCount(null), isNull);
+    });
+  });
+
+  group('localizeUploadDate – ngày đăng tiếng Việt', () {
+    test('dạng viết tắt và viết đầy đủ', () {
+      expect(YoutubeService.localizeUploadDate('9y ago'), '9 năm trước');
+      expect(YoutubeService.localizeUploadDate('3 months ago'), '3 tháng trước');
+      expect(YoutubeService.localizeUploadDate('2mo ago'), '2 tháng trước');
+      expect(YoutubeService.localizeUploadDate('1 week ago'), '1 tuần trước');
+      expect(YoutubeService.localizeUploadDate('5 days ago'), '5 ngày trước');
+      expect(YoutubeService.localizeUploadDate('4h ago'), '4 giờ trước');
+      expect(YoutubeService.localizeUploadDate('10 minutes ago'), '10 phút trước');
+    });
+
+    test('video từng phát trực tiếp', () {
+      expect(
+        YoutubeService.localizeUploadDate('Streamed 2 years ago'),
+        'Đã phát trực tiếp 2 năm trước',
+      );
+    });
+
+    test('không nhận ra thì giữ nguyên, rỗng thì bỏ', () {
+      expect(YoutubeService.localizeUploadDate('12/3/2020'), '12/3/2020');
+      expect(YoutubeService.localizeUploadDate(''), isNull);
+      expect(YoutubeService.localizeUploadDate(null), isNull);
+    });
+  });
+
   group('isSingable – lọc livestream và Shorts', () {
     test('bỏ livestream', () {
       expect(

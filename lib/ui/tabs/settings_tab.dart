@@ -164,6 +164,20 @@ class SettingsTab extends StatelessWidget {
         const _SessionCard(),
 
         const SizedBox(height: 18),
+        _section('Quảng cáo'),
+        KaraCard(
+          child: SwitchListTile(
+            value: s.autoSkipAds,
+            onChanged: (v) => room.updateSettings(s.copyWith(autoSkipAds: v)),
+            title: const Text('Tự bỏ qua quảng cáo'),
+            subtitle: const Text(
+              'Quảng cáo trên TV vừa cho bỏ qua là tự bấm "Bỏ qua". '
+              'Quảng cáo không bỏ qua được thì vẫn phải chờ.',
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 18),
         _section('Tìm kiếm'),
         KaraCard(
           child: SwitchListTile(

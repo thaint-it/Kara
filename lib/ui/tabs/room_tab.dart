@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import '../../lounge/tv_controller.dart';
 import '../../models/queue_item.dart';
 import '../../models/room_settings.dart';
-import '../../models/song.dart';
 import '../app.dart';
 import '../pair_tv_page.dart';
 import '../theme.dart';
 import '../widgets/kara_card.dart';
 import '../widgets/phone_player_view.dart';
 import '../widgets/qr_panel.dart';
+import '../widgets/seek_bar.dart';
 import '../widgets/song_tile.dart';
 
 /// Tab "Phòng": thẻ Đang hát, nút điều khiển to, dòng Tiếp theo, mã QR thu
@@ -203,10 +203,7 @@ class _NowPlayingCard extends StatelessWidget {
                 ],
               ),
             const SizedBox(height: 14),
-            _ProgressRow(
-              position: room.position,
-              duration: room.duration,
-            ),
+            const SeekBar(),
             if (room.isAd) ...[
               const SizedBox(height: 10),
               Row(
@@ -230,45 +227,6 @@ class _NowPlayingCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ProgressRow extends StatelessWidget {
-  const _ProgressRow({required this.position, required this.duration});
-
-  final double position;
-  final double duration;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = duration > 0 ? (position / duration).clamp(0.0, 1.0) : 0.0;
-    return Column(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(
-            value: value,
-            minHeight: 6,
-            backgroundColor: KaraColors.line,
-            valueColor: const AlwaysStoppedAnimation(KaraColors.accent),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              formatDuration(position.round()),
-              style: const TextStyle(fontSize: 15, color: KaraColors.muted),
-            ),
-            Text(
-              formatDuration(duration.round()),
-              style: const TextStyle(fontSize: 15, color: KaraColors.muted),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

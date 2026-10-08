@@ -20,6 +20,10 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+/* `display: flex` của .gate, .voice… sẽ đè thuộc tính `hidden` của trình
+   duyệt, làm màn hình "Buổi hát đã kết thúc" luôn hiện. Ép `hidden` thắng. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -139,37 +143,109 @@ input:focus { border-color: var(--accent); }
 /* --------------------------------------------------------------- nội dung */
 
 main { padding: 12px 14px 20px; }
-.tab[hidden] { display: none; }
 
-.searchbar { display: flex; align-items: center; gap: 6px; }
-.searchbar input { flex: 1; }
-
-.switch {
+/* Thanh tìm kiếm kiểu YouTube: ô bo tròn hai đầu + nút micro tròn bên phải */
+.searchbar { display: flex; align-items: center; gap: 8px; }
+.searchbox {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 12px 2px 4px;
-  font-size: 15px;
-  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding-left: 14px;
 }
-.switch input { width: 22px; height: 22px; accent-color: var(--accent); }
+.searchbox:focus-within { border-color: var(--muted); }
+.searchbox-icon { width: 22px; height: 22px; fill: var(--muted); flex: 0 0 auto; }
+.searchbox input[type="search"] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 13px 10px;
+  border-radius: 999px;
+}
+.searchbox input::-webkit-search-cancel-button { display: none; }
+.searchbox .icon-btn { color: var(--text); }
 
-.suggests {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  overflow: hidden;
-}
-.suggests li {
-  padding: 14px 16px;
-  font-size: 16px;
-  border-bottom: 1px solid var(--line);
+.mic-btn {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
-.suggests li:last-child { border-bottom: 0; }
+.mic-btn svg { width: 24px; height: 24px; fill: var(--text); }
+
+/* Hàng "chip" lọc dưới ô tìm kiếm */
+.chips { display: flex; gap: 8px; margin: 10px 0 2px; overflow-x: auto; }
+.chip { position: relative; flex: 0 0 auto; cursor: pointer; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip span {
+  display: inline-block;
+  padding: 7px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.chip input:checked + span { background: var(--text); color: var(--bg); }
+
+/* Gợi ý chiếm chỗ kết quả khi đang gõ, giống YouTube */
+.suggests, .history { list-style: none; margin: 6px -14px 0; padding: 0; }
+.suggests li, .history li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 6px 4px 18px;
+  min-height: 52px;
+  font-size: 17px;
+  cursor: pointer;
+}
+.suggests li:active, .history li:active { background: var(--surface); }
+.suggest-icon { font-size: 22px; color: var(--muted); width: 22px; text-align: center; }
+.suggest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-fill {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+/* Màn hình khi chưa tìm: lịch sử, thể loại, "Hát lại", gợi ý */
+.section-title { font-size: 19px; font-weight: 700; margin: 22px 0 10px; }
+.genres { display: flex; flex-wrap: wrap; gap: 8px; }
+.genre {
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.genre:active { background: var(--line); }
+.shelf {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  margin: 0 -14px;
+  padding: 0 14px 4px;
+  scroll-snap-type: x proximity;
+}
+.mini { flex: 0 0 200px; scroll-snap-align: start; }
+.mini .thumb { width: 200px; flex: none; }
+.mini .card-title { margin: 8px 0 8px; font-size: 15px; }
 
 .status { padding: 18px 4px; color: var(--muted); font-size: 15px; text-align: center; }
 .status.error { color: var(--accent); }
@@ -227,6 +303,72 @@ main { padding: 12px 14px 20px; }
 .tag.accent { color: var(--accent); border-color: var(--accent); }
 
 .btn-request { padding: 10px 16px; font-size: 15px; }
+
+/* Thẻ kết quả kiểu YouTube: ảnh tràn hết chiều ngang, avatar kênh + chữ bên dưới */
+.results:has(.card.yt) { gap: 22px; }
+.card.yt { display: block; }
+.card.yt .thumb {
+  width: auto;
+  margin: 0 -14px;
+  border-radius: 0;
+}
+.card.yt .thumb .dur { right: 8px; bottom: 8px; font-size: 15px; border-radius: 4px; padding: 1px 6px; }
+.card-row { display: flex; gap: 12px; align-items: flex-start; margin-top: 10px; }
+.avatar {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+}
+.card.yt .card-title { line-height: 1.3; }
+
+/* ------------------------------------------------- tìm bằng giọng nói */
+
+.voice {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 28px calc(56px + env(safe-area-inset-bottom));
+}
+.voice-close { align-self: flex-start; color: var(--text); font-size: 24px; }
+.voice-text {
+  flex: 1;
+  align-self: stretch;
+  margin: 18vh 0 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.voice-text.heard { font-size: 30px; color: var(--text); }
+.voice-mic {
+  width: 84px;
+  height: 84px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+.voice-mic svg { width: 40px; height: 40px; fill: var(--text); }
+.voice-mic.listening { background: var(--accent); animation: voice-pulse .9s ease-in-out infinite alternate; }
+.voice-mic.listening svg { fill: #fff; }
+@keyframes voice-pulse {
+  from { box-shadow: 0 0 0 6px rgba(255, 77, 109, .18); }
+  to { box-shadow: 0 0 0 24px rgba(255, 77, 109, .18); }
+}
 
 /* ------------------------------------------------------------ thanh tab */
 

@@ -10,28 +10,16 @@ import '../services/youtube_service.dart';
 import 'host_shell.dart';
 import 'theme.dart';
 
-class KaraApp extends StatelessWidget {
+/// Dựng các service theo đúng thứ tự phụ thuộc: web server phải chạy trước
+/// khi bộ phát trên điện thoại nạp trang `/player`.
+class KaraApp extends StatefulWidget {
   const KaraApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Karaoke Hàng Chờ',
-        debugShowCheckedModeBanner: false,
-        theme: buildKaraTheme(),
-        home: const _Bootstrap(),
-      );
+  State<KaraApp> createState() => _KaraAppState();
 }
 
-/// Dựng các service theo đúng thứ tự phụ thuộc: web server phải chạy trước
-/// khi bộ phát trên điện thoại nạp trang `/player`.
-class _Bootstrap extends StatefulWidget {
-  const _Bootstrap();
-
-  @override
-  State<_Bootstrap> createState() => _BootstrapState();
-}
-
-class _BootstrapState extends State<_Bootstrap> {
+class _KaraAppState extends State<KaraApp> {
   late final Future<RoomController> _ready = _boot();
 
   RoomController? _room;
@@ -89,19 +77,23 @@ class _BootstrapState extends State<_Bootstrap> {
   Widget build(BuildContext context) => FutureBuilder<RoomController>(
         future: _ready,
         builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _StartupError(error: '${snapshot.error}');
-          }
           final room = snapshot.data;
-          if (room == null) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          return RoomScope(
-            room: room,
-            server: _server!,
-            child: const HostShell(),
+          return MaterialApp(
+            title: 'Karaoke Hàng Chờ',
+            debugShowCheckedModeBanner: false,
+            theme: buildKaraTheme(),
+            // RoomScope bọc ngoài Navigator (qua `builder`) để các trang được
+            // push thêm (Ghép TV, Lịch sử…) cũng nằm dưới nó.
+            builder: (context, child) => room == null
+                ? child!
+                : RoomScope(room: room, server: _server!, child: child!),
+            home: snapshot.hasError
+                ? _StartupError(error: '${snapshot.error}')
+                : room == null
+                    ? const Scaffold(
+                        body: Center(child: CircularProgressIndicator()),
+                      )
+                    : const HostShell(),
           );
         },
       );

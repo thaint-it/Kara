@@ -44,6 +44,10 @@ dependencies:
   # iOS không cho chạy server ở nền (xem ghi chú trong Cài đặt của app).
   flutter_foreground_task: ^9.2.2
 
+  # Nút micro "tìm bằng giọng nói" ở tab Tìm bài, dùng bộ nhận giọng nói có
+  # sẵn của máy (Google trên Android, Siri trên iOS).
+  speech_to_text: ^7.4.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

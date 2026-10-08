@@ -40,6 +40,7 @@ class RoomController extends ChangeNotifier {
         _youtube = youtube {
     _settings = storage.loadSettings();
     _roomCode = storage.roomCode();
+    _searchHistory = storage.loadSearchHistory().toList();
 
     tv = TvController(
       deviceName: deviceName,
@@ -149,6 +150,66 @@ class RoomController extends ChangeNotifier {
 
   bool get isPlaying => _playerState == PlayerState.playing;
 
+  // -------------------------------------- màn hình tìm kiếm khi chưa gõ gì
+
+  static const searchHistoryLimit = 15;
+  late final List<String> _searchHistory;
+
+  /// Từ khoá chủ phòng đã tìm, mới nhất trước.
+  List<String> get searchHistory => List.unmodifiable(_searchHistory);
+
+  void rememberSearch(String query) {
+    final q = query.trim();
+    if (q.isEmpty || YoutubeService.extractVideoId(q) != null) return;
+    _searchHistory.removeWhere((e) => e.toLowerCase() == q.toLowerCase());
+    _searchHistory.insert(0, q);
+    if (_searchHistory.length > searchHistoryLimit) {
+      _searchHistory.removeRange(searchHistoryLimit, _searchHistory.length);
+    }
+    _storage.saveSearchHistory(_searchHistory);
+    notifyListeners();
+  }
+
+  void forgetSearch(String query) {
+    _searchHistory.remove(query);
+    _storage.saveSearchHistory(_searchHistory);
+    notifyListeners();
+  }
+
+  /// Bài đã hát gần đây trong phòng (không lặp), để chọn hát lại mà không cần
+  /// nhớ tên bài.
+  List<Song> recentlySung({int limit = 12}) {
+    final seen = <String>{};
+    final songs = <Song>[];
+    for (final item in _history) {
+      if (item.status != QueueStatus.played &&
+          item.status != QueueStatus.skipped) {
+        continue;
+      }
+      if (seen.add(item.song.videoId)) songs.add(item.song);
+      if (songs.length >= limit) break;
+    }
+    return songs;
+  }
+
+  /// Bài đề xuất kiểu "Tiếp theo" của YouTube, dựa trên bài đang hát và vừa
+  /// hát; phòng mới chưa hát gì thì là các bài karaoke đang hot.
+  Future<List<Song>> recommendations({bool? preferKaraoke}) {
+    final seeds = <String>[
+      if (_current != null) _current!.song.videoId,
+      ...recentlySung(limit: 3).map((s) => s.videoId),
+      ..._queue.map((e) => e.song.videoId),
+    ];
+    return _youtube.recommend(
+      seeds.toSet().take(3).toList(),
+      preferKaraoke: preferKaraoke ?? _settings.preferKaraoke,
+      exclude: {
+        if (_current != null) _current!.song.videoId,
+        ..._queue.map((e) => e.song.videoId),
+      },
+    );
+  }
+
   /// Bài kế tiếp để hiện thanh "Tiếp theo: …".
   QueueItem? get upNext => _queue.isEmpty ? null : _queue.first;
 
@@ -242,6 +303,7 @@ class RoomController extends ChangeNotifier {
     _disposed = true;
     _ticker?.cancel();
     _sessionTimer?.cancel();
+    _adSkipTimer?.cancel();
     tv.link.removeListener(_onTvLinkChanged);
     _tvTarget.dispose();
     _phoneTarget.dispose();
@@ -263,6 +325,9 @@ class RoomController extends ChangeNotifier {
     } else if (next.volume != previous.volume) {
       await target.setVolume(next.volume);
     }
+
+    // Vừa bật "Tự bỏ qua quảng cáo" lúc đang có quảng cáo thì bỏ luôn.
+    if (next.autoSkipAds != previous.autoSkipAds) _updateAutoSkipAd();
 
     // Bật "Tự động duyệt" thì các yêu cầu đang chờ vào thẳng hàng chờ.
     if (next.autoApprove && !previous.autoApprove) approveAll();
@@ -652,7 +717,54 @@ class RoomController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tua tới [seconds] – kéo thanh thời gian, hoặc lùi lại khi hát chậm.
+  Future<void> seekTo(double seconds) async {
+    if (_current == null || _isAd) return;
+    final max = _duration > 0 ? _duration - 1 : seconds;
+    _basePosition = seconds.clamp(0, max < 0 ? 0 : max).toDouble();
+    _basePositionAt = DateTime.now();
+    await target.seek(_basePosition);
+    notifyListeners();
+  }
+
+  /// Tua tương đối, ví dụ `-10` = lùi 10 giây.
+  Future<void> seekBy(double delta) => seekTo(position + delta);
+
   Future<void> skipAd() => target.skipAd();
+
+  /// Thử bấm "Bỏ qua" mỗi [_adSkipRetry] khi quảng cáo cho phép. Thử lại vì
+  /// TV chỉ báo "bỏ qua được" một lần, mà lệnh gửi sớm quá thì TV lờ đi.
+  static const _adSkipRetry = Duration(seconds: 2);
+  Timer? _adSkipTimer;
+  bool _adSkipAnnounced = false;
+
+  void _updateAutoSkipAd() {
+    final want = _isAd && _adSkippable && _settings.autoSkipAds;
+    if (!want) {
+      _adSkipTimer?.cancel();
+      _adSkipTimer = null;
+      if (!_isAd) _adSkipAnnounced = false;
+      return;
+    }
+    if (_adSkipTimer != null) return;
+    void attempt() {
+      target.skipAd();
+      if (!_adSkipAnnounced) {
+        _adSkipAnnounced = true;
+        _toast('Đã tự bỏ qua quảng cáo');
+      }
+    }
+
+    attempt();
+    _adSkipTimer = Timer.periodic(_adSkipRetry, (t) {
+      if (!_isAd || !_adSkippable) {
+        t.cancel();
+        _adSkipTimer = null;
+        return;
+      }
+      attempt();
+    });
+  }
 
   /// "Quay lại hàng chờ" khi TV đang phát bài ngoài hàng chờ.
   Future<void> reclaimPlayback() async {
@@ -745,6 +857,7 @@ class RoomController extends ChangeNotifier {
 
     _isAd = u.isAd;
     _adSkippable = u.adSkippable;
+    _updateAutoSkipAd();
 
     // Quảng cáo không được tính là hết bài (mục 12).
     if (u.isAd) {

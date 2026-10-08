@@ -6,6 +6,7 @@ import '../../core/room_controller.dart';
 import '../app.dart';
 import '../tabs/pending_tab.dart';
 import '../theme.dart';
+import 'seek_bar.dart';
 
 /// Trình phát nhúng dạng thu gọn, nằm cố định phía trên các tab.
 ///
@@ -168,12 +169,7 @@ class _PhonePlayerFullscreenState extends State<PhonePlayerFullscreen> {
           const Spacer(),
           Row(
             children: [
-              Expanded(
-                child: _ProgressBar(
-                  position: room.position,
-                  duration: room.duration,
-                ),
-              ),
+              const Expanded(child: SeekBar(compact: true)),
               const SizedBox(width: 12),
               OutlinedButton.icon(
                 onPressed: () => _openPendingSheet(context),
@@ -291,20 +287,3 @@ class _RoundIconButton extends StatelessWidget {
       );
 }
 
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.position, required this.duration});
-
-  final double position;
-  final double duration;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = duration > 0 ? (position / duration).clamp(0.0, 1.0) : 0.0;
-    return LinearProgressIndicator(
-      value: value,
-      minHeight: 6,
-      backgroundColor: KaraColors.line,
-      valueColor: const AlwaysStoppedAnimation(KaraColors.accent),
-    );
-  }
-}

@@ -114,6 +114,7 @@
   var ws = null;
   var reconnectDelay = 1000;
   var lastState = null;
+  var lastCurrentId = null;
 
   function setConn(status) {
     $('conn').className = 'conn ' + status;
@@ -190,6 +191,14 @@
     if (!roomStillValid(state)) return;
 
     var current = state.current;
+
+    // Sang bài mới thì "Hát lại" và bài gợi ý đã cũ: tải lại khi đang xem.
+    var currentId = current ? current.song.videoId : '';
+    if (currentId !== lastCurrentId) {
+      lastCurrentId = currentId;
+      homeLoadedAt = 0;
+      if (!$('home').hidden && !$('tab-search').hidden) loadHome(false);
+    }
     $('now-title').textContent = current
       ? current.song.title + ' – ' + current.requestedBy.name
       : 'Chưa có bài nào';
@@ -233,7 +242,9 @@
    */
   function songCard(song, metaLine, options) {
     options = options || {};
-    var card = el('div', 'card');
+    // `layout: 'yt'` = ảnh to toàn chiều ngang + avatar kênh, như kết quả
+    // tìm kiếm của app YouTube. Mặc định là dòng ngang gọn cho các danh sách.
+    var card = el('div', options.layout === 'yt' ? 'card yt' : 'card');
 
     var thumb = el('div', 'thumb');
     var img = document.createElement('img');
@@ -262,15 +273,35 @@
     });
     if (actions.childNodes.length) body.appendChild(actions);
 
-    card.appendChild(body);
+    if (options.layout === 'yt') {
+      var row = el('div', 'card-row');
+      row.appendChild(channelAvatar(song.channel));
+      row.appendChild(body);
+      card.appendChild(row);
+    } else {
+      card.appendChild(body);
+    }
     return card;
   }
 
-  function metaOf(song) {
+  var AVATAR_COLORS = ['#e53935', '#8e24aa', '#3949ab', '#039be5',
+    '#00897b', '#7cb342', '#f4511e', '#6d4c41'];
+
+  /** Vòng tròn chữ cái đầu tên kênh – kết quả tìm kiếm không kèm ảnh kênh. */
+  function channelAvatar(name) {
+    var n = (name || '').trim();
+    var hash = 0;
+    for (var i = 0; i < n.length; i++) hash = (hash * 31 + n.charCodeAt(i)) | 0;
+    var dot = el('span', 'avatar', n ? Array.from(n)[0].toUpperCase() : '?');
+    dot.style.background = AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+    return dot;
+  }
+
+  function metaOf(song, sep) {
     var bits = [song.channel];
     if (song.viewCountText) bits.push(song.viewCountText);
     if (song.publishedText) bits.push(song.publishedText);
-    return bits.filter(Boolean).join(' • ');
+    return bits.filter(Boolean).join(sep || ' • ');
   }
 
   // -------------------------------------------------------------- tìm bài
@@ -284,13 +315,20 @@
   $('prefer-karaoke').addEventListener('change', function () {
     localStorage.setItem(LS_KARAOKE, this.checked ? '1' : '0');
     if (searchState.query) runSearch(searchState.query, true);
+    else loadHome(true);
   });
 
   qInput.addEventListener('input', function () {
     show($('q-clear'), qInput.value.length > 0);
     clearTimeout(suggestTimer);
     var q = qInput.value.trim();
-    if (q.length < 2 || /youtu/.test(q)) { show($('suggests'), false); return; }
+    if (!q) { resetSearch(); return; }
+    if (q.length < 2 || /youtu/.test(q)) {
+      show($('suggests'), false);
+      show($('results'), !!searchState.query);
+      show($('home'), !searchState.query);
+      return;
+    }
     // Gợi ý khi gõ, debounce 250 ms (mục 6).
     suggestTimer = setTimeout(function () { loadSuggests(q); }, 250);
   });
@@ -304,21 +342,244 @@
     }
   });
 
-  $('q-clear').addEventListener('click', function () {
+  /** Về màn hình chưa tìm: lịch sử, thể loại, bài vừa hát, bài gợi ý. */
+  function resetSearch() {
     qInput.value = '';
     show($('q-clear'), false);
     show($('suggests'), false);
     clear($('results'));
     show($('search-status'), false);
+    show($('results-more'), false);
     searchState = { query: '', page: 0, loading: false, done: false };
+    show($('home'), true);
+    loadHome(false);
+  }
+
+  $('q-clear').addEventListener('click', resetSearch);
+
+  // ------------------------------------------- màn hình khi chưa tìm gì
+
+  var LS_HISTORY = 'kara.searchHistory';
+  var HISTORY_LIMIT = 10;
+  var GENRES = [
+    ['Nhạc trẻ', 'nhạc trẻ hay nhất'], ['Bolero', 'bolero'],
+    ['Nhạc vàng', 'nhạc vàng'], ['Song ca', 'song ca nam nữ'],
+    ['Nhạc Trịnh', 'nhạc trịnh'], ['Remix', 'remix'],
+    ['Nhạc Hoa lời Việt', 'nhạc hoa lời việt'], ['Thiếu nhi', 'thiếu nhi']
+  ];
+
+  function loadHistory() {
+    try {
+      var list = JSON.parse(localStorage.getItem(LS_HISTORY) || '[]');
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+
+  function saveHistory(list) {
+    try { localStorage.setItem(LS_HISTORY, JSON.stringify(list)); } catch (e) { /* bỏ qua */ }
+  }
+
+  function rememberSearch(q) {
+    if (/youtu/.test(q)) return;
+    var lower = q.toLowerCase();
+    var list = loadHistory().filter(function (x) { return x.toLowerCase() !== lower; });
+    list.unshift(q);
+    saveHistory(list.slice(0, HISTORY_LIMIT));
+  }
+
+  function searchFor(q) {
+    qInput.value = q;
+    show($('q-clear'), true);
+    runSearch(q, true);
+    window.scrollTo(0, 0);
+  }
+
+  function renderHistory() {
+    var list = loadHistory().slice(0, 6);
+    var ul = $('home-history');
+    clear(ul);
+    list.forEach(function (q) {
+      var li = el('li');
+      li.appendChild(el('span', 'suggest-icon', '↺'));
+      li.appendChild(el('span', 'suggest-text', q));
+      var remove = el('button', 'suggest-fill', '✕');
+      remove.setAttribute('aria-label', 'Xoá khỏi lịch sử');
+      remove.addEventListener('click', function (e) {
+        e.stopPropagation();
+        saveHistory(loadHistory().filter(function (x) { return x !== q; }));
+        renderHistory();
+      });
+      li.appendChild(remove);
+      li.addEventListener('click', function () { searchFor(q); });
+      ul.appendChild(li);
+    });
+    show($('home-history-box'), list.length > 0);
+  }
+
+  (function renderGenres() {
+    var box = $('home-genres');
+    GENRES.forEach(function (g) {
+      var chip = el('button', 'genre', g[0]);
+      chip.addEventListener('click', function () { searchFor(g[1]); });
+      box.appendChild(chip);
+    });
+  })();
+
+  /** Thẻ nhỏ cho hàng cuộn ngang "Hát lại". */
+  function miniCard(song) {
+    var card = el('div', 'mini');
+    var thumb = el('div', 'thumb');
+    var img = document.createElement('img');
+    img.loading = 'lazy';
+    img.src = song.thumbUrl;
+    img.alt = '';
+    thumb.appendChild(img);
+    thumb.appendChild(el('span', 'dur', song.durationText || fmtDuration(song.durationSec)));
+    thumb.addEventListener('click', function () { openPreview(song); });
+    card.appendChild(thumb);
+    card.appendChild(el('p', 'card-title', song.title));
+    var btn = el('button', 'btn btn-primary btn-request', 'Yêu cầu');
+    btn.addEventListener('click', function () { requestSong(song, btn); });
+    card.appendChild(btn);
+    return card;
+  }
+
+  var homeLoadedAt = 0;
+  var homeLoading = false;
+  var HOME_TTL = 2 * 60 * 1000;
+
+  /** Bài vừa hát + bài gợi ý từ app chủ phòng. Tải lại sau 2 phút. */
+  function loadHome(force) {
+    renderHistory();
+    if (homeLoading) return;
+    if (!force && Date.now() - homeLoadedAt < HOME_TTL) return;
+    homeLoading = true;
+
+    var status = $('home-reco-status');
+    if (!$('home-reco').childNodes.length) {
+      status.textContent = 'Đang tải…';
+      show(status, true);
+    }
+
+    var karaoke = $('prefer-karaoke').checked ? '1' : '0';
+    api('/api/home?karaoke=' + karaoke).then(function (body) {
+      homeLoading = false;
+      homeLoadedAt = Date.now();
+
+      var recent = body.recent || [];
+      var shelf = $('home-recent');
+      clear(shelf);
+      recent.forEach(function (s) { shelf.appendChild(miniCard(s)); });
+      show($('home-recent-box'), recent.length > 0);
+      $('home-reco-title').textContent = recent.length || lastCurrentId
+        ? 'Gợi ý cho bạn'
+        : 'Karaoke đang hot';
+
+      var reco = body.recommended || [];
+      var box = $('home-reco');
+      clear(box);
+      reco.forEach(function (s) { box.appendChild(resultCard(s)); });
+      status.textContent = 'Chưa lấy được bài gợi ý. Bấm để thử lại.';
+      show(status, reco.length === 0);
+    }).catch(function () {
+      homeLoading = false;
+      status.textContent = 'Chưa lấy được bài gợi ý. Bấm để thử lại.';
+      show(status, true);
+    });
+  }
+
+  $('home-reco-status').addEventListener('click', function () { loadHome(true); });
+
+  // ------------------------------------------------- tìm bằng giọng nói
+
+  // Trình duyệt chỉ cho dùng micro trên trang https; trang khách chạy http://
+  // trong WiFi nên thường không có. Khi đó nút micro hướng dẫn dùng micro của
+  // bàn phím điện thoại (Gboard / đọc chính tả của iPhone) – cách đó luôn chạy.
+  var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var canListen = !!SpeechRec && window.isSecureContext;
+  var recognizer = null;
+
+  function closeVoice() {
+    if (recognizer) { try { recognizer.abort(); } catch (e) { /* bỏ qua */ } }
+    recognizer = null;
+    show($('voice'), false);
+  }
+
+  function startVoice() {
+    var text = $('voice-text');
+    var mic = $('voice-mic');
+    var heard = '';
+    text.textContent = 'Đang nghe…';
+    text.classList.remove('heard');
+    mic.classList.add('listening');
+    show($('voice'), true);
+
+    recognizer = new SpeechRec();
+    recognizer.lang = 'vi-VN';
+    recognizer.interimResults = true;
+    recognizer.maxAlternatives = 1;
+    recognizer.onresult = function (e) {
+      heard = '';
+      for (var i = 0; i < e.results.length; i++) heard += e.results[i][0].transcript;
+      text.textContent = heard;
+      text.classList.add('heard');
+    };
+    recognizer.onerror = function (e) {
+      text.textContent = e.error === 'not-allowed'
+        ? 'Chưa được phép dùng micro.'
+        : 'Không nghe rõ. Bấm micro để nói lại.';
+      text.classList.remove('heard');
+    };
+    recognizer.onend = function () {
+      mic.classList.remove('listening');
+      recognizer = null;
+      var q = heard.trim();
+      if (!q) {
+        if (!text.classList.contains('heard') && text.textContent === 'Đang nghe…') {
+          text.textContent = 'Không nghe rõ. Bấm micro để nói lại.';
+        }
+        return;
+      }
+      setTimeout(function () {
+        show($('voice'), false);
+        qInput.value = q;
+        show($('q-clear'), true);
+        runSearch(q, true);
+      }, 350);
+    };
+    recognizer.start();
+  }
+
+  $('mic').addEventListener('click', function () {
+    if (canListen) { startVoice(); return; }
+    qInput.focus();
+    toast('Bấm nút 🎤 trên bàn phím điện thoại để nói tên bài.');
+  });
+  $('voice-close').addEventListener('click', closeVoice);
+  $('voice-mic').addEventListener('click', function () {
+    if (recognizer) recognizer.stop(); else startVoice();
   });
 
   function loadSuggests(q) {
     api('/api/suggest?q=' + encodeURIComponent(q)).then(function (body) {
       var list = $('suggests');
       clear(list);
-      (body.suggestions || []).slice(0, 8).forEach(function (s) {
-        var li = el('li', null, s);
+      // Gợi ý về muộn sau khi đã bấm tìm thì bỏ, kẻo che mất kết quả.
+      if (qInput.value.trim() !== q || searchState.query === q) return;
+      (body.suggestions || []).slice(0, 10).forEach(function (s) {
+        var li = el('li');
+        li.appendChild(el('span', 'suggest-icon', '⌕'));
+        li.appendChild(el('span', 'suggest-text', s));
+        // Mũi tên ↖: đưa gợi ý lên ô tìm kiếm để sửa tiếp, chưa tìm ngay.
+        var fill = el('button', 'suggest-fill', '↖');
+        fill.setAttribute('aria-label', 'Sửa từ khoá này');
+        fill.addEventListener('click', function (e) {
+          e.stopPropagation();
+          qInput.value = s + ' ';
+          qInput.focus();
+          qInput.dispatchEvent(new Event('input'));
+        });
+        li.appendChild(fill);
         li.addEventListener('click', function () {
           qInput.value = s;
           show(list, false);
@@ -327,6 +588,9 @@
         list.appendChild(li);
       });
       show(list, list.childNodes.length > 0);
+      // Gợi ý chiếm chỗ của kết quả / màn hình chính trong lúc gõ.
+      show($('results'), list.hidden && !!searchState.query);
+      show($('home'), list.hidden && !searchState.query);
     }).catch(function () { show($('suggests'), false); });
   }
 
@@ -342,7 +606,11 @@
     if (!q) return;
 
     if (reset) {
+      rememberSearch(q);
       searchState = { query: q, page: 0, loading: false, done: false };
+      show($('suggests'), false);
+      show($('home'), false);
+      show($('results'), true);
       clear($('results'));
       setSearchStatus('Đang tìm…');
     }
@@ -384,7 +652,8 @@
       tags.push({ label: 'Có thể không phát được', kind: 'warn' });
     }
 
-    return songCard(song, metaOf(song), {
+    return songCard(song, metaOf(song, ' · '), {
+      layout: 'yt',
       tags: tags,
       actions: [{
         label: 'Yêu cầu bài này',
@@ -537,6 +806,8 @@
       '&name=' + encodeURIComponent(guestName || 'Khách'))
     .then(applyState)
     .catch(function () { setConn('offline'); });
+
+  loadHome(true);
 
   if (guestName) {
     connect();

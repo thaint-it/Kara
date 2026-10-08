@@ -48,16 +48,44 @@
 <main>
   <!-- ------------------------------------------------- Tab: Tìm bài -->
   <section class="tab" id="tab-search">
+    <!-- Bố cục giống app YouTube: ô tìm kiếm bo tròn + nút micro -->
     <div class="searchbar">
-      <input id="q" type="search" placeholder="Tên bài, ca sĩ, hoặc dán link YouTube"
-             autocomplete="off" enterkeyhint="search">
-      <button id="q-clear" class="icon-btn" aria-label="Xoá" hidden>✕</button>
+      <div class="searchbox">
+        <svg class="searchbox-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 9.5 16a6.5 6.5 0 0 0 4.2-1.6l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg>
+        <input id="q" type="search" placeholder="Tìm trên YouTube"
+               autocomplete="off" enterkeyhint="search">
+        <button id="q-clear" class="icon-btn" aria-label="Xoá" hidden>✕</button>
+      </div>
+      <button id="mic" class="mic-btn" aria-label="Tìm bằng giọng nói">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1a7 7 0 0 0 6-6.9h-2z"/></svg>
+      </button>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="prefer-karaoke" checked>
-      <span>Ưu tiên bản karaoke</span>
-    </label>
+    <div class="chips">
+      <label class="chip">
+        <input type="checkbox" id="prefer-karaoke" checked>
+        <span>🎤 Ưu tiên bản karaoke</span>
+      </label>
+    </div>
     <ul class="suggests" id="suggests" hidden></ul>
+
+    <!-- Khi chưa tìm: lịch sử, thể loại, bài vừa hát, bài gợi ý – cho người
+         không nhớ tên bài chọn khi thấy nó hiện ra -->
+    <div id="home">
+      <div id="home-history-box" hidden>
+        <h2 class="section-title">Tìm gần đây</h2>
+        <ul class="history" id="home-history"></ul>
+      </div>
+      <h2 class="section-title">Thể loại</h2>
+      <div class="genres" id="home-genres"></div>
+      <div id="home-recent-box" hidden>
+        <h2 class="section-title">Hát lại</h2>
+        <div class="shelf" id="home-recent"></div>
+      </div>
+      <h2 class="section-title" id="home-reco-title">Gợi ý cho bạn</h2>
+      <div id="home-reco" class="results"></div>
+      <div id="home-reco-status" class="status">Đang tải…</div>
+    </div>
+
     <div id="search-status" class="status" hidden></div>
     <div id="results" class="results"></div>
     <div id="results-more" class="status" hidden>Đang tải thêm…</div>
@@ -83,6 +111,16 @@
 </nav>
 
 <div id="toast" class="toast" hidden></div>
+
+<!-- Màn hình "Đang nghe…" khi tìm bằng giọng nói -->
+<div id="voice" class="voice" hidden>
+  <button id="voice-close" class="icon-btn voice-close" aria-label="Đóng">✕</button>
+  <p id="voice-text" class="voice-text">Đang nghe…</p>
+  <button id="voice-mic" class="voice-mic listening" aria-label="Dừng nghe">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1a7 7 0 0 0 6-6.9h-2z"/></svg>
+  </button>
+  <p class="muted small">Nói tên bài hoặc ca sĩ</p>
+</div>
 
 <!-- Xem trước 15 giây, phát ngay trên máy của khách, không ảnh hưởng bài đang hát -->
 <div id="preview" class="preview" hidden>

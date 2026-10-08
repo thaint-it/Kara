@@ -26,6 +26,7 @@ class RoomSettings {
     this.guestControl = false,
     this.maxPendingPerGuest = 3,
     this.preferKaraoke = true,
+    this.autoSkipAds = true,
     this.volume = 60,
     this.sessionIdleHours = 6,
   });
@@ -50,6 +51,9 @@ class RoomSettings {
   /// Tự thêm chữ "karaoke" vào từ khoá tìm kiếm.
   final bool preferKaraoke;
 
+  /// Quảng cáo trên TV vừa cho phép bỏ qua là tự bấm "Bỏ qua" luôn.
+  final bool autoSkipAds;
+
   final PlaybackMode mode;
   final int volume;
 
@@ -59,6 +63,7 @@ class RoomSettings {
     bool? guestControl,
     int? maxPendingPerGuest,
     bool? preferKaraoke,
+    bool? autoSkipAds,
     int? volume,
     int? sessionIdleHours,
   }) =>
@@ -68,6 +73,7 @@ class RoomSettings {
         guestControl: guestControl ?? this.guestControl,
         maxPendingPerGuest: maxPendingPerGuest ?? this.maxPendingPerGuest,
         preferKaraoke: preferKaraoke ?? this.preferKaraoke,
+        autoSkipAds: autoSkipAds ?? this.autoSkipAds,
         volume: volume ?? this.volume,
         sessionIdleHours: sessionIdleHours ?? this.sessionIdleHours,
       );
@@ -78,6 +84,7 @@ class RoomSettings {
         'guestControl': guestControl,
         'maxPendingPerGuest': maxPendingPerGuest,
         'preferKaraoke': preferKaraoke,
+        'autoSkipAds': autoSkipAds,
         'volume': volume,
         'sessionIdleHours': sessionIdleHours,
       };
@@ -88,6 +95,7 @@ class RoomSettings {
         guestControl: j['guestControl'] as bool? ?? false,
         maxPendingPerGuest: (j['maxPendingPerGuest'] as num?)?.toInt() ?? 3,
         preferKaraoke: j['preferKaraoke'] as bool? ?? true,
+        autoSkipAds: j['autoSkipAds'] as bool? ?? true,
         volume: (j['volume'] as num?)?.toInt() ?? 60,
         sessionIdleHours: (j['sessionIdleHours'] as num?)?.toInt() ?? 6,
       );

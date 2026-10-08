@@ -113,6 +113,7 @@ class GuestServer {
       ..get('/api/state', _handleState)
       ..get('/api/suggest', _handleSuggest)
       ..get('/api/search', _handleSearch)
+      ..get('/api/home', _handleHome)
       ..post('/api/request', _handleRequest)
       ..post('/api/request/cancel', _handleCancel)
       ..post('/api/control', _handleControl)
@@ -223,6 +224,34 @@ class GuestServer {
       return _error('Không tìm được. Kiểm tra Internet rồi thử lại.',
           status: 503);
     }
+  }
+
+  /// Màn hình tìm kiếm khi khách chưa gõ gì: bài vừa hát trong phòng + bài
+  /// đề xuất, cho người không nhớ tên bài chọn khi thấy nó hiện ra.
+  Future<Response> _handleHome(Request request) async {
+    final karaoke = switch (request.url.queryParameters['karaoke']) {
+      '1' || 'true' => true,
+      '0' || 'false' => false,
+      _ => room.settings.preferKaraoke,
+    };
+    Map<String, dynamic> withFlags(Song s) => {
+          ...s.toJson(),
+          'inQueue': room.isDuplicate(s.videoId),
+          if (room.phoneTarget.blockedVideoIds.contains(s.videoId))
+            'embeddable': false,
+        };
+
+    List<Song> recommended;
+    try {
+      recommended = await room.recommendations(preferKaraoke: karaoke);
+    } catch (e) {
+      debugPrint('Lấy bài đề xuất cho khách thất bại: $e');
+      recommended = const [];
+    }
+    return _json({
+      'recent': room.recentlySung().map(withFlags).toList(),
+      'recommended': recommended.map(withFlags).toList(),
+    });
   }
 
   Future<Response> _handleRequest(Request request) async {
