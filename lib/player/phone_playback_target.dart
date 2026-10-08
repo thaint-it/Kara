@@ -96,12 +96,14 @@ class PhonePlaybackTarget implements PlaybackTarget {
   }
 
   @override
-  Future<void> load(Song song) async {
+  Future<void> load(Song song, {double startAt = 0}) async {
     _videoId = song.videoId;
     _position = 0;
     _duration = song.durationSec.toDouble();
     await attach();
     await _js('kara.load(${jsonEncode(song.videoId)})');
+    // [startAt] chỉ dùng khi lấy lại TV đã trả; trình phát trên điện thoại
+    // không bao giờ bị "trả" nên luôn phát từ đầu.
   }
 
   @override

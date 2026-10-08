@@ -40,8 +40,9 @@ abstract class PlaybackTarget {
   /// Tắt bộ phát khi đổi chế độ hoặc đóng app.
   Future<void> detach();
 
-  /// Phát một bài từ đầu.
-  Future<void> load(Song song);
+  /// Phát một bài, từ đầu hoặc từ giây [startAt] (hát tiếp sau khi lấy lại
+  /// TV đã trả).
+  Future<void> load(Song song, {double startAt = 0});
 
   Future<void> play();
 

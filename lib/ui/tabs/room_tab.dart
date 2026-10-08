@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/room_controller.dart';
 import '../../lounge/tv_controller.dart';
 import '../../models/queue_item.dart';
 import '../../models/room_settings.dart';
@@ -77,31 +78,102 @@ class _TvStatusCard extends StatelessWidget {
       TvLinkState.connecting => KaraColors.warn,
       TvLinkState.unpaired => KaraColors.muted,
       TvLinkState.disconnected => KaraColors.accent,
+      TvLinkState.released => KaraColors.muted,
     };
+
+    final released = link.state == TvLinkState.released;
+    final canRelease = link.state == TvLinkState.connected ||
+        link.state == TvLinkState.disconnected ||
+        link.state == TvLinkState.connecting;
 
     return KaraCard(
       child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(14, 14, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.tv, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                link.description,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
+            Row(
+              children: [
+                Icon(Icons.tv, color: color),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    link.description,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PairTvPage()),
+                  ),
+                  child: Text(
+                    link.state == TvLinkState.unpaired ? 'Ghép TV' : 'Đổi TV',
+                  ),
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PairTvPage()),
+            if (released)
+              Padding(
+                padding: const EdgeInsets.only(left: 36, right: 6),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Dùng remote xem YouTube bình thường. Bấm Phát để hát tiếp.',
+                        style: TextStyle(fontSize: 15, color: KaraColors.muted),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: room.reconnectTv,
+                      child: const Text('Kết nối lại'),
+                    ),
+                  ],
+                ),
+              )
+            else if (canRelease)
+              Padding(
+                padding: const EdgeInsets.only(left: 24),
+                child: TextButton.icon(
+                  onPressed: () => _confirmRelease(context, room),
+                  icon: const Icon(Icons.logout, size: 20),
+                  label: const Text('Trả TV về YouTube'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: KaraColors.muted,
+                  ),
+                ),
               ),
-              child: Text(link.state == TvLinkState.unpaired ? 'Ghép TV' : 'Đổi TV'),
-            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _confirmRelease(BuildContext context, RoomController room) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Trả TV về YouTube?'),
+        content: const Text(
+          'App sẽ dừng bài đang hát và ngắt kết nối để mọi người dùng remote '
+          'xem YouTube bình thường. Hàng chờ vẫn giữ nguyên; bấm Phát là hát '
+          'tiếp, không phải nhập mã lại.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Thôi'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Trả TV'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await room.releaseTv();
   }
 }
 

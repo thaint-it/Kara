@@ -188,6 +188,7 @@ class _StatusRow extends StatelessWidget {
       TvLinkState.connecting => KaraColors.warn,
       TvLinkState.unpaired => KaraColors.muted,
       TvLinkState.disconnected => KaraColors.accent,
+      TvLinkState.released => KaraColors.muted,
     };
 
     return Row(

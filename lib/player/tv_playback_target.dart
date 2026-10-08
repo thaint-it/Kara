@@ -40,11 +40,11 @@ class TvPlaybackTarget implements PlaybackTarget {
   }
 
   @override
-  Future<void> load(Song song) async {
+  Future<void> load(Song song, {double startAt = 0}) async {
     _videoId = song.videoId;
-    _position = 0;
+    _position = startAt;
     _duration = song.durationSec.toDouble();
-    await tv.playVideo(song.videoId);
+    await tv.playVideo(song.videoId, startAt: startAt);
   }
 
   @override

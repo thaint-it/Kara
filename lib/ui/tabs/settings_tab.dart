@@ -421,6 +421,8 @@ class _SessionCard extends StatelessWidget {
         content: const Text(
           'Sẽ xoá hàng chờ, các yêu cầu chờ duyệt và danh sách khách, rồi sinh '
           'mã phòng mới — khách phải quét lại mã QR.\n\n'
+          'TV được trả về YouTube bình thường (ngắt kết nối, bật lại tự phát '
+          'video).\n\n'
           'Vẫn giữ: cài đặt, TV đã ghép, lịch sử Đã hát và những khách bạn đã '
           'tin tưởng.',
           style: TextStyle(fontSize: 16),

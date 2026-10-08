@@ -265,7 +265,10 @@ class RoomController extends ChangeNotifier {
     await _checkSession();
 
     if (mode == PlaybackMode.tv) {
-      tv.start(auth: _storage.loadTvAuth());
+      tv.start(
+        auth: _storage.loadTvAuth(),
+        released: _storage.loadTvReleased(),
+      );
     }
     await target.attach();
 
@@ -358,7 +361,10 @@ class RoomController extends ChangeNotifier {
     }
 
     if (to == PlaybackMode.tv) {
-      tv.start(auth: _storage.loadTvAuth());
+      tv.start(
+        auth: _storage.loadTvAuth(),
+        released: _storage.loadTvReleased(),
+      );
     }
     await target.attach();
     await target.setVolume(_settings.volume);
@@ -408,9 +414,17 @@ class RoomController extends ChangeNotifier {
   void _onTvLinkChanged() {
     final state = tv.link.value.state;
 
+    // Lưu cờ "đã trả TV" mỗi khi nó đổi (trả TV, lấy lại, ghép TV mới, quên
+    // TV) để mở app lại vẫn đúng.
+    if (tv.isReleased != _tvReleasedSaved) {
+      _tvReleasedSaved = tv.isReleased;
+      _storage.saveTvReleased(_tvReleasedSaved);
+    }
+
     // Chỉ tính đồng hồ "TV mất kết nối" khi thật sự đang dùng một TV đã ghép.
     if (mode == PlaybackMode.tv && tv.isPaired) {
-      if (state == TvLinkState.connected) {
+      if (state == TvLinkState.connected || state == TvLinkState.released) {
+        // Đã trả TV là chủ ý, không tính là TV mất kết nối.
         _tvOfflineSince = null;
       } else if (state == TvLinkState.disconnected) {
         // `connecting` không tính: nó chỉ là một nhịp chớp giữa hai lần thử.
@@ -421,6 +435,59 @@ class RoomController extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  // ------------------------------------------------ trả TV về YouTube
+
+  late bool _tvReleasedSaved = _storage.loadTvReleased();
+
+  /// Đã trả TV: app không điều khiển TV cho tới khi chủ phòng bấm Phát.
+  bool get tvReleased => tv.isReleased;
+
+  /// Trả TV về YouTube bình thường: dừng bài đang hát, bật lại tự phát video,
+  /// ngắt kết nối. Hàng chờ giữ nguyên; bấm Phát là nối lại và hát tiếp.
+  Future<void> releaseTv() async {
+    if (mode != PlaybackMode.tv || !tv.isPaired || tv.isReleased) return;
+    if (_current != null) {
+      _basePosition = position;
+      _basePositionAt = DateTime.now();
+      _playerState = PlayerState.paused;
+      await target.pause();
+    }
+    _adSkipTimer?.cancel();
+    _adSkipTimer = null;
+    await tv.release();
+    _toast('Đã trả TV về YouTube. Bấm Phát để hát tiếp.');
+    notifyListeners();
+  }
+
+  /// Nút "Kết nối lại": nối TV nhưng chưa phát gì.
+  void reconnectTv() {
+    if (!tv.isReleased) return;
+    tv.reclaim();
+    notifyListeners();
+  }
+
+  /// Chủ phòng bấm Phát / Qua bài / Hát lại sau khi đã trả TV: nối lại TV.
+  /// Trả về `false` nếu không nối lại được.
+  Future<bool> _takeBackTv() async {
+    if (mode != PlaybackMode.tv || !tv.isReleased) return true;
+    tv.reclaim();
+    notifyListeners();
+
+    final connected = Completer<bool>();
+    void check() {
+      if (tv.isConnected && !connected.isCompleted) connected.complete(true);
+    }
+
+    tv.link.addListener(check);
+    check();
+    final ok = await connected.future
+        .timeout(const Duration(seconds: 15), onTimeout: () => false);
+    tv.link.removeListener(check);
+
+    if (!ok) _toast('Chưa kết nối lại được TV. Kiểm tra TV đã bật chưa.', isError: true);
+    return ok;
   }
 
   Future<void> _checkSession() async {
@@ -445,6 +512,14 @@ class RoomController extends ChangeNotifier {
     final hadContent = hasSessionContent;
 
     await target.stop();
+
+    // Hết buổi hát thì trả TV về YouTube bình thường: bật lại tự phát, ngắt
+    // kết nối. Buổi sau bấm Phát là app tự nối lại.
+    if (mode == PlaybackMode.tv && tv.isPaired && !tv.isReleased) {
+      _adSkipTimer?.cancel();
+      _adSkipTimer = null;
+      await tv.release();
+    }
 
     _current = null;
     _queue.clear();
@@ -683,6 +758,20 @@ class RoomController extends ChangeNotifier {
 
   Future<void> togglePlayPause() async {
     _markActivity();
+    if (mode == PlaybackMode.tv && tv.isReleased) {
+      // Bấm Phát sau khi đã trả TV: nối lại rồi hát tiếp đúng chỗ đang dừng.
+      if (!await _takeBackTv()) return;
+      final song = _current?.song;
+      if (song == null) {
+        if (_queue.isNotEmpty) await _playNext();
+        return;
+      }
+      _playerState = PlayerState.buffering;
+      _guard.reset();
+      await _loadIntoTarget(song, startAt: _basePosition);
+      notifyListeners();
+      return;
+    }
     if (_current == null) {
       if (_queue.isNotEmpty) await _playNext();
       return;
@@ -702,6 +791,7 @@ class RoomController extends ChangeNotifier {
 
   /// Qua bài (UI hỏi xác nhận trước khi gọi).
   Future<void> skip() async {
+    if (!await _takeBackTv()) return;
     _finishCurrent(QueueStatus.skipped);
     await _playNext();
   }
@@ -710,10 +800,18 @@ class RoomController extends ChangeNotifier {
   Future<void> restart() async {
     final song = _current?.song;
     if (song == null) return;
+    final wasReleased = mode == PlaybackMode.tv && tv.isReleased;
+    if (!await _takeBackTv()) return;
     _basePosition = 0;
     _basePositionAt = DateTime.now();
-    await target.seek(0);
-    await target.play();
+    if (wasReleased) {
+      // TV vừa nối lại chưa có bài nào: gửi lại bài từ đầu.
+      _guard.reset();
+      await _loadIntoTarget(song);
+    } else {
+      await target.seek(0);
+      await target.play();
+    }
     notifyListeners();
   }
 
@@ -768,6 +866,7 @@ class RoomController extends ChangeNotifier {
 
   /// "Quay lại hàng chờ" khi TV đang phát bài ngoài hàng chờ.
   Future<void> reclaimPlayback() async {
+    if (!await _takeBackTv()) return;
     _outsideVideoId = null;
     final song = _current?.song;
     if (song == null) {
@@ -782,6 +881,7 @@ class RoomController extends ChangeNotifier {
   Future<void> playItemNow(String uid) async {
     final i = _queue.indexWhere((e) => e.uid == uid);
     if (i < 0) return;
+    if (!await _takeBackTv()) return;
     final item = _queue.removeAt(i);
     _finishCurrent(QueueStatus.skipped);
     _queue.insert(0, item);
@@ -818,11 +918,19 @@ class RoomController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadIntoTarget(Song song) async {
+  Future<void> _loadIntoTarget(Song song, {double startAt = 0}) async {
+    if (mode == PlaybackMode.tv && tv.isReleased) {
+      // Đã trả TV: không tự giành lại, kể cả khi khách thêm bài vào hàng chờ
+      // trống. Bài nằm chờ ở "Đang hát", chủ phòng bấm Phát mới nối TV.
+      _playerState = PlayerState.paused;
+      _basePosition = startAt;
+      _basePositionAt = DateTime.now();
+      return;
+    }
     final now = DateTime.now();
     _guard.markLoaded(now);
     _guard.markAdvanced(now);
-    await target.load(song);
+    await target.load(song, startAt: startAt);
     await target.setVolume(_settings.volume);
   }
 

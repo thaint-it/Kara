@@ -21,6 +21,10 @@ enum TvLinkState {
 
   /// Từng ghép nhưng hiện mất kết nối, sẽ tự thử lại.
   disconnected,
+
+  /// Chủ phòng đã "Trả TV về YouTube": ngắt kết nối và **không** tự nối lại
+  /// cho tới khi chủ phòng bấm Phát. Vẫn nhớ TV, không phải nhập mã lại.
+  released,
 }
 
 @immutable
@@ -54,6 +58,7 @@ class TvLink {
         TvLinkState.disconnected => error == null
             ? 'Mất kết nối – đang thử lại'
             : 'Mất kết nối – $error',
+        TvLinkState.released => 'Đã trả TV về YouTube',
       };
 
   TvLink copyWith({
@@ -143,9 +148,18 @@ class TvController {
 
   // ---------------------------------------------------------------- vòng đời
 
+  /// Đã "Trả TV về YouTube": vòng lặp đứng yên, không tự nối lại.
+  bool _released = false;
+
+  bool get isReleased => _released;
+
   /// Nạp token đã lưu (nếu có) rồi bật vòng lặp tự kết nối.
-  void start({TvAuth? auth}) {
+  ///
+  /// [released] = lần trước chủ phòng đã trả TV rồi tắt app: mở lại app
+  /// không được tự giành TV.
+  void start({TvAuth? auth, bool released = false}) {
     if (auth != null) _setAuth(auth, persist: false);
+    if (released) _released = true;
     if (_running) {
       _wake();
       return;
@@ -172,8 +186,38 @@ class TvController {
     link.dispose();
   }
 
+  /// Trả TV về YouTube bình thường: bật lại tự phát video (app đã tắt nó khi
+  /// kết nối), ngắt phiên điều khiển và ngừng tự nối lại. Token vẫn giữ.
+  Future<void> release() async {
+    _released = true;
+    if (isConnected) {
+      try {
+        await setAutoplayEnabled(true);
+        await disconnectSession();
+      } catch (e) {
+        debugPrint('Trả TV: lỗi khi ngắt kết nối: $e');
+      }
+    }
+    _connectionLost();
+    if (isPaired) {
+      link.value = link.value.copyWith(
+        state: TvLinkState.released,
+        clearError: true,
+      );
+    }
+    _wake();
+  }
+
+  /// Lấy lại TV sau khi đã trả: nối lại ngay, không phải nhập mã.
+  void reclaim() {
+    if (!_released) return;
+    _released = false;
+    _wake();
+  }
+
   /// "Quên TV này" – xoá token, dừng kết nối.
   void forget() {
+    _released = false;
     _connectionLost();
     _setAuth(null);
     link.value = const TvLink.unpaired();
@@ -202,6 +246,16 @@ class TvController {
     while (_running) {
       if (_auth == null) {
         link.value = const TvLink.unpaired();
+        await _sleep(const Duration(hours: 1));
+        continue;
+      }
+
+      if (_released) {
+        link.value = link.value.copyWith(
+          state: TvLinkState.released,
+          screenName: _auth?.screenName,
+          clearError: true,
+        );
         await _sleep(const Duration(hours: 1));
         continue;
       }
@@ -242,6 +296,8 @@ class TvController {
 
       _connectionLost();
       if (!_running) break;
+      // Phiên bị cắt vì chủ phòng vừa trả TV: không phải mất kết nối.
+      if (_released) continue;
       link.value = link.value.copyWith(state: TvLinkState.disconnected);
       await _sleep(_retryDelay);
     }
@@ -249,7 +305,7 @@ class TvController {
 
   Future<void> _fail(String message) async {
     _connectionLost();
-    if (!_running) return;
+    if (!_running || _released) return;
     link.value = link.value.copyWith(
       state: TvLinkState.disconnected,
       error: message,
@@ -286,6 +342,7 @@ class TvController {
       screenName: screen['name'] as String?,
     ));
     _connectionLost();
+    _released = false;
     start();
     _wake();
     return isLinked;
@@ -475,8 +532,13 @@ class TvController {
   }
 
   /// Phát một video – đặt hẳn playlist mới nên bài đang phát bị thay thế.
-  Future<bool> playVideo(String videoId) =>
-      _command('setPlaylist', {'videoId': videoId});
+  /// Phát [videoId], bắt đầu từ giây [startAt] (dùng khi hát tiếp sau khi
+  /// đã trả TV).
+  Future<bool> playVideo(String videoId, {double startAt = 0}) =>
+      _command('setPlaylist', {
+        'videoId': videoId,
+        if (startAt > 0) 'currentTime': startAt.toStringAsFixed(0),
+      });
 
   Future<bool> play() => _command('play');
 

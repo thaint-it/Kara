@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kara/core/room_controller.dart';
+import 'package:kara/lounge/lounge_events.dart';
+import 'package:kara/lounge/tv_controller.dart';
 import 'package:kara/models/queue_item.dart';
 import 'package:kara/models/song.dart';
 import 'package:kara/services/storage_service.dart';
@@ -595,6 +598,44 @@ void main() {
 
       expect(reopened.queue.map((i) => i.song.videoId), ['bai-cu']);
       reopened.dispose();
+    });
+  });
+
+  group('Trả TV về YouTube', () {
+    /// Mở lại app với một TV đã ghép và đã được trả từ lần trước. Vòng kết nối
+    /// thấy cờ "đã trả" trước khi gọi mạng, nên test không cần Internet.
+    Future<void> reopenWithReleasedTv() async {
+      room.dispose();
+      SharedPreferences.setMockInitialValues({
+        'tv_auth': jsonEncode({'screenId': 'man-hinh-1', 'loungeToken': 'tk'}),
+        'tv_released': true,
+      });
+      storage = await StorageService.open();
+      room = RoomController(
+        storage: storage,
+        youtube: youtube,
+        deviceName: 'Kara test',
+      );
+      await room.init();
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    test('mở app sau khi đã trả TV: không tự giành lại TV', () async {
+      await reopenWithReleasedTv();
+
+      expect(room.tvReleased, isTrue);
+      expect(room.tvLink.state, TvLinkState.released);
+    });
+
+    test('có bài mới khi đã trả TV: bài nằm ở Đang hát, chưa phát', () async {
+      await reopenWithReleasedTv();
+
+      room.addByHost(song('aaa'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(room.current?.song.videoId, 'aaa');
+      expect(room.playerState, PlayerState.paused);
+      expect(room.tvReleased, isTrue);
     });
   });
 }

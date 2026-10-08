@@ -20,6 +20,7 @@ class StorageService {
   static const _kSettings = 'room_settings';
   static const _kRoomCode = 'room_code';
   static const _kSearchHistory = 'search_history';
+  static const _kTvReleased = 'tv_released';
 
   final SharedPreferences _prefs;
   final File _roomFile;
@@ -64,6 +65,12 @@ class StorageService {
   Future<void> saveTvAuth(TvAuth? auth) => auth == null
       ? _prefs.remove(_kTvAuth)
       : _prefs.setString(_kTvAuth, jsonEncode(auth.toJson()));
+
+  /// Chủ phòng đã "Trả TV về YouTube" – mở app lại không tự giành TV.
+  bool loadTvReleased() => _prefs.getBool(_kTvReleased) ?? false;
+
+  Future<void> saveTvReleased(bool released) =>
+      _prefs.setBool(_kTvReleased, released);
 
   // ----------------------------------------------------- lịch sử tìm kiếm
 
